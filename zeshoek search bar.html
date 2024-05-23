@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://fonts.googleapis.com/css2?family=Georama:wght@400;500&display=swap" rel="stylesheet">
+    <title>Woonbalans: Risico op betaalbaarheidsproblemen</title>
+    <style>
+        body {
+            font-family: 'Georama', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 20px;
+        }
+        canvas {
+            max-width: 600px;
+            max-height: 600px;
+        }
+        #controls {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 10px;
+        }
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        select {
+            width: 300px;
+            margin-top: 5px;
+        }
+        button {
+            padding: 10px 20px;
+            cursor: pointer;
+        }
+        h2 {
+            margin: 20px 0;
+        }
+        #municipality-search {
+            width: 300px;
+            padding: 5px;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div id="controls">
+        <div class="control-group">
+            <label>Selecteer 1 of meerdere gemeenten en vergelijk deze gemeenten met elkaar of met 1 van de benchmarks</label>
+            <input type="text" id="municipality-search" placeholder="Zoek gemeente...">
+            <select id="municipality-select" multiple onchange="updateChart()"></select>
+        </div>
+        <div class="control-group">
+            <label>Selecteer 1 of meerdere benchmarks</label>
+            <select id="benchmark-select" multiple onchange="updateChart()"></select>
+        </div>
+        <button onclick="resetChart()">Reset</button>
+    </div>
+    <canvas id="myChart"></canvas>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        let apiData = [];
+        const benchmarkData = [
+            {"Gemeente": "0. Vlaams Gemiddelde", "Moeilijkheid om een vergunning te verkrijgen": 0.5, "Huishoudensgroei": 0.5, "Beperkte hoeveelheid beschikbare percelen": 0.5, "Hoog aandeel woningen zonder domicilie": 0.5, "Groter overstromingsrisico": 0.5, "Woonlast": 0.5},
+            {"Gemeente": "2. Gemeenten Met Concentratie Van Economische Activiteit", "Moeilijkheid om een vergunning te verkrijgen": 0.576603005, "Huishoudensgroei": 0.510724078, "Beperkte hoeveelheid beschikbare percelen": 0.614451609, "Hoog aandeel woningen zonder domicilie": 0.454843425, "Groter overstromingsrisico": 0.565243225, "Woonlast": 0.514449685},
+            {"Gemeente": "1. Grote En Regionale Steden", "Moeilijkheid om een vergunning te verkrijgen": 0.720903303, "Huishoudensgroei": 0.301870915, "Beperkte hoeveelheid beschikbare percelen": 0.770039964, "Hoog aandeel woningen zonder domicilie": 0.664421187, "Groter overstromingsrisico": 0.884685058, "Woonlast": 0.525694315},
+            {"Gemeente": "3. Kustgemeenten", "Moeilijkheid om een vergunning te verkrijgen": 0.784985143, "Huishoudensgroei": 0.261364499, "Beperkte hoeveelheid beschikbare percelen": 0.838216316, "Hoog aandeel woningen zonder domicilie": 1.353871661, "Groter overstromingsrisico": 0.740458302, "Woonlast": 0.649516806},
+            {"Gemeente": "4. Landelijke Gemeenten", "Moeilijkheid om een vergunning te verkrijgen": 0.332375479, "Huishoudensgroei": 0.488538729, "Beperkte hoeveelheid beschikbare percelen": 0.5037187, "Hoog aandeel woningen zonder domicilie": 0.505996142, "Groter overstromingsrisico": 0.395388822, "Woonlast": 0.463735027},
+            {"Gemeente": "5. Verstedelijkte Gemeenten", "Moeilijkheid om een vergunning te verkrijgen": 0.582094688, "Huishoudensgroei": 0.416533222, "Beperkte hoeveelheid beschikbare percelen": 0.516647449, "Hoog aandeel woningen zonder domicilie": 0.485906577, "Groter overstromingsrisico": 0.571162034, "Woonlast": 0.392662648},
+            {"Gemeente": "6. Woongemeenten", "Moeilijkheid om een vergunning te verkrijgen": 0.487034292, "Huishoudensgroei": 0.556770513, "Beperkte hoeveelheid beschikbare percelen": 0.376251892, "Hoog aandeel woningen zonder domicilie": 0.452797063, "Groter overstromingsrisico": 0.447254822, "Woonlast": 0.521410226}
+        ];
+        const color_scale = ["#ff7f0e", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"];
+        let myChart;
+
+        document.addEventListener('DOMContentLoaded', function () {
+            const ctx = document.getElementById('myChart').getContext('2d');
+            myChart = new Chart(ctx, {
+                type: 'radar',
+                data: {
+                    labels: ['Moeilijkheid om een vergunning te verkrijgen', 'Huishoudensgroei', 'Beperkte hoeveelheid beschikbare percelen', 'Hoog aandeel woningen zonder domicilie', 'Groter overstromingsrisico', 'Woonlast'],
+                    datasets: []
+                },
+                options: {
+                    scales: {
+                        r: {
+                            suggestedMin: 0,
+                            suggestedMax: 1,
+                            ticks: {
+                                display: false
+                            }
+                        }
+                    },
+                    plugins: {
+                        tooltip: {
+                            enabled: true
+                        }
+                    },
+                    font: {
+                        family: 'Georama'
+                    }
+                }
+            });
+
+            fetchData().then(() => {
+                // Voeg standaard "0. Vlaams Gemiddelde" toe aan de grafiek
+                updateChart();
+            });
+
+            document.getElementById('municipality-search').addEventListener('input', function() {
+                filterMunicipalities(this.value);
+            });
+        });
+
+        async function fetchData() {
+            const apiUrl = 'https://gist.githubusercontent.com/gehuybre/f74c83da29c5dba47c6dc2dbae1a95c0/raw/d72004df850e39b6b6294c7b55ccf5978edaaddf/zeshoek.json';
+            const response = await fetch(apiUrl);
+            apiData = await response.json();
+            apiData.sort((a, b) => a.Gemeente.localeCompare(b.Gemeente));
+            populateMunicipalityDropdown(apiData);
+            populateBenchmarkDropdown(benchmarkData);
+        }
+
+        function populateMunicipalityDropdown(data) {
+            const select = document.getElementById('municipality-select');
+            select.innerHTML = '';
+            data.forEach(item => {
+                const option = document.createElement('option');
+                option.value = item.Gemeente;
+                option.textContent = item.Gemeente;
+                select.appendChild(option);
+            });
+        }
+
+        function populateBenchmarkDropdown(data) {
+            const select = document.getElementById('benchmark-select');
+            data.forEach(item => {
+                const option = new Option(item.Gemeente, item.Gemeente);
+                select.appendChild(option);
+            });
+            // Selecteer standaard "0. Vlaams Gemiddelde"
+            select.querySelector('option[value="0. Vlaams Gemiddelde"]').selected = true;
+        }
+
+        function filterMunicipalities(query) {
+            const filteredData = apiData.filter(item => item.Gemeente.toLowerCase().includes(query.toLowerCase()));
+            populateMunicipalityDropdown(filteredData);
+        }
+
+        function updateChart() {
+            const selectedMunicipalities = Array.from(document.getElementById('municipality-select').selectedOptions).map(opt => opt.value);
+            const selectedBenchmarks = Array.from(document.getElementById('benchmark-select').selectedOptions).map(opt => opt.value);
+
+            let datasets = [];
+            let colorIndex = 0;
+
+            selectedMunicipalities.forEach(municipality => {
+                const data = apiData.find(m => m.Gemeente === municipality);
+                if (data) {
+                    datasets.push({
+                        label: data.Gemeente,
+                        data: [
+                            parseFloat(data['Moeilijkheid om een vergunning te verkrijgen']),
+                            parseFloat(data['Huishoudensgroei']),
+                            parseFloat(data['Beperkte hoeveelheid beschikbare percelen']),
+                            parseFloat(data['Hoog aandeel woningen zonder domicilie']),
+                            parseFloat(data['Groter overstromingsrisico']),
+                            parseFloat(data['Woonlast'])
+                        ],
+                        backgroundColor: color_scale[colorIndex % color_scale.length] + '33', // Adding transparency
+                        borderColor: color_scale[colorIndex % color_scale.length],
+                        borderWidth: 1
+                    });
+                    colorIndex++;
+                }
+            });
+
+            selectedBenchmarks.forEach(benchmark => {
+                const data = benchmarkData.find(b => b.Gemeente === benchmark);
+                if (data) {
+                    datasets.push({
+                        label: data.Gemeente,
+                        data: Object.values(data).slice(1), // Skip the "Gemeente" key
+                        backgroundColor: color_scale[colorIndex % color_scale.length] + '33', // Adding transparency
+                        borderColor: color_scale[colorIndex % color_scale.length],
+                        borderWidth: 1
+                    });
+                    colorIndex++;
+                }
+            });
+
+            myChart.data.datasets = datasets;
+            myChart.update();
+        }
+
+        function resetChart() {
+            document.getElementById('municipality-select').selectedIndex = -1;
+            document.getElementById('benchmark-select').selectedIndex = -1;
+            myChart.data.datasets = [];
+            myChart.update();
+        }
+    </script>
+</body>
+</html>

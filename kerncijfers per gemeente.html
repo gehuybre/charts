@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kerncijfers per gemeente</title>
+    <link href="https://fonts.googleapis.com/css2?family=Georama:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Georama', sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        select, input {
+            width: 300px;
+            padding: 5px;
+            margin-bottom: 20px;
+        }
+        .chart-container {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 40px;
+        }
+        .chart-box {
+            width: 30%;
+        }
+        canvas {
+            max-width: 100%;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels"></script>
+    <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+    <script>
+        google.charts.load('current', {'packages':['corechart']});
+        google.charts.setOnLoadCallback(initialize);
+
+        let apiData = [];
+        let epcData = [];
+        let epcAverages = {};
+        let epcChart;
+
+        function initialize() {
+            fetchEpcData().then(() => {
+                fetchData().then(() => {
+                    if (apiData.length > 0 && epcData.length > 0) {
+                        populateMunicipalityDropdown(epcData);
+                        updateCharts();
+                    } else {
+                        console.error("Geen data beschikbaar.");
+                    }
+                });
+
+                document.getElementById('municipality-search').addEventListener('input', function() {
+                    filterMunicipalities(this.value);
+                });
+
+                document.getElementById('municipality-select').addEventListener('change', function() {
+                    updateCharts();
+                });
+            });
+        }
+
+        async function fetchData() {
+            const apiUrl = 'https://gist.githubusercontent.com/gehuybre/b606c91fcf4de897bede78b25ab25bfd/raw/d90bac21b870e64567a7a8478fef012798cde5f6/kerncijfers.json';
+            try {
+                const response = await fetch(apiUrl);
+                if (!response.ok) {
+                    throw new Error('Netwerkrespons was niet ok');
+                }
+                apiData = await response.json();
+                console.log("Data opgehaald:", apiData);
+                apiData.sort((a, b) => a.Gemeente.localeCompare(b.Gemeente));
+            } catch (error) {
+                console.error('Fout bij het ophalen van de data:', error);
+            }
+        }
+
+        async function fetchEpcData() {
+            const apiUrl = 'https://gist.githubusercontent.com/gehuybre/4b0cb1d74ee19ea74e0628661d1c5bbe/raw/11faabb85b3a9f16ba01073c942862441ad815a8/gistfile1.txt';
+            try {
+                const response = await fetch(apiUrl);
+                if (!response.ok) {
+                    throw new Error('Netwerkrespons was niet ok');
+                }
+                epcData = await response.json();
+                console.log("EPC Data opgehaald:", epcData);
+                epcAverages = calculateEpcAverages(epcData);
+            } catch (error) {
+                console.error('Fout bij het ophalen van de EPC data:', error);
+            }
+        }
+
+        function getEpcLabel(value) {
+            if (value < 100) return 'A';
+            if (value < 200) return 'B';
+            if (value < 300) return 'C';
+            if (value < 400) return 'D';
+            if (value < 500) return 'E';
+            return 'F';
+        }
+
+        function populateMunicipalityDropdown(data) {
+            const select = document.getElementById('municipality-select');
+            select.innerHTML = '';
+            data.forEach(item => {
+                const option = document.createElement('option');
+                option.value = item.Gemeente;
+                option.textContent = item.Gemeente;
+                if (item.Gemeente === 'Aalst') {
+                    option.selected = true;
+                }
+                select.appendChild(option);
+            });
+        }
+
+        function filterMunicipalities(query) {
+            const filteredData = epcData.filter(item => item.Gemeente.toLowerCase().includes(query.toLowerCase()));
+            populateMunicipalityDropdown(filteredData);
+        }
+
+        function calculateEpcAverages(data) {
+            const averages = {};
+            data.forEach(item => {
+                const type = item["Soort gemeente (Belfius indeling)"];
+                if (!averages[type]) {
+                    averages[type] = { totalFlats: 0, totalHouses: 0, count: 0 };
+                }
+                averages[type].totalFlats += item["EPC flats"];
+                averages[type].totalHouses += item["EPC huizen"];
+                averages[type].count += 1;
+            });
+            Object.keys(averages).forEach(type => {
+                averages[type].avgFlats = Math.round(averages[type].totalFlats / averages[type].count);
+                averages[type].avgHouses = Math.round(averages[type].totalHouses / averages[type].count);
+            });
+            return averages;
+        }
+
+        function updateCharts() {
+            const selectedMunicipality = document.getElementById('municipality-select').value;
+            const data = apiData.find(m => m.Gemeente === selectedMunicipality);
+            const epcMunicipalityData = epcData.find(m => m.Gemeente === selectedMunicipality);
+
+            if (!data || !epcMunicipalityData) {
+                console.error('Geen data gevonden voor de geselecteerde gemeente:', selectedMunicipality);
+                return;
+            }
+
+            console.log("Geselecteerde data:", data);
+            console.log("Geselecteerde EPC data:", epcMunicipalityData);
+
+            drawChart('housePriceChart', 'Prijs Huis', [
+                ['Jaar', 'Prijs'],
+                ['2021', parseFloat(data['Prijshuis2021'])],
+                ['2022', parseFloat(data['Prijshuis2022'])],
+                ['2023', parseFloat(data['Prijshuis2023'])]
+            ]);
+
+            drawChart('flatPriceChart', 'Prijs Flat', [
+                ['Jaar', 'Prijs'],
+                ['2021', parseFloat(data['Prijsflat2021'])],
+                ['2022', parseFloat(data['Prijsflat2022'])],
+                ['2023', parseFloat(data['Prijsflat2023'])]
+            ]);
+
+            drawChart('rentPriceChart', 'Huurprijs', [
+                ['Jaar', 'Prijs'],
+                ['2021', parseFloat(data['Huurprijs2021'])],
+                ['2022', parseFloat(data['Huurprijs2022'])],
+                ['2023', parseFloat(data['Huurprijs2023'])]
+            ]);
+
+            updateEpcChart(epcMunicipalityData, epcAverages);
+        }
+
+        function drawChart(elementId, title, chartData) {
+            const data = google.visualization.arrayToDataTable(chartData);
+            const options = {
+                title: title,
+                hAxis: { title: 'Jaar', minValue: 0 },
+                vAxis: { title: 'Prijs', minValue: 0 },
+                legend: 'none',
+                colors: ['#ff7f0e'],
+                fontName: 'Georama',
+                bar: { groupWidth: "75%" }
+            };
+
+            const chart = new google.visualization.ColumnChart(document.getElementById(elementId));
+            chart.draw(data, options);
+        }
+
+        function updateEpcChart(data, averages) {
+            const epcChartCanvas = document.getElementById('epcChart').getContext('2d');
+            const epcColors = {
+                'A': '#2ecc71',
+                'B': '#27ae60',
+                'C': '#f39c12',
+                'D': '#e67e22',
+                'E': '#e74c3c',
+                'F': '#c0392b'
+            };
+
+            const epcFlatsValue = data["EPC flats"];
+            const epcHousesValue = data["EPC huizen"];
+            const epcFlatsLabel = getEpcLabel(epcFlatsValue);
+            const epcHousesLabel = getEpcLabel(epcHousesValue);
+
+            const averageType = data["Soort gemeente (Belfius indeling)"];
+            const avgFlatsValue = averages[averageType].avgFlats;
+            const avgHousesValue = averages[averageType].avgHouses;
+            const avgFlatsLabel = getEpcLabel(avgFlatsValue);
+            const avgHousesLabel = getEpcLabel(avgHousesValue);
+
+            const avgFlatsOverall = Math.round(epcData.reduce((sum, item) => sum + item["EPC flats"], 0) / epcData.length);
+            const avgHousesOverall = Math.round(epcData.reduce((sum, item) => sum + item["EPC huizen"], 0) / epcData.length);
+            const avgFlatsOverallLabel = getEpcLabel(avgFlatsOverall);
+            const avgHousesOverallLabel = getEpcLabel(avgHousesOverall);
+
+            if (epcChart) {
+                epcChart.destroy();
+            }
+
+            epcChart = new Chart(epcChartCanvas, {
+                type: 'bar',
+                data: {
+                    labels: ['Gemeente', 'Gemiddelde van Vlaamse gemeenten', `Gemiddelde van ${averageType}`],
+                    datasets: [
+                        {
+                            label: 'Flats',
+                            data: [epcFlatsValue, avgFlatsOverall, avgFlatsValue],
+                            backgroundColor: [epcColors[epcFlatsLabel], epcColors[avgFlatsOverallLabel], epcColors[avgFlatsLabel]],
+                            datalabels: {
+                                align: 'end',
+                                anchor: 'end',
+                                formatter: function(value, context) {
+                                    const epcLabel = getEpcLabel(value);
+                                    return `Flats: ${value} (${epcLabel})`;
+                                }
+                            }
+                        },
+                        {
+                            label: 'Huizen',
+                            data: [epcHousesValue, avgHousesOverall, avgHousesValue],
+                            backgroundColor: [epcColors[epcHousesLabel], epcColors[avgHousesOverallLabel], epcColors[avgHousesLabel]],
+                            datalabels: {
+                                align: 'end',
+                                anchor: 'end',
+                                formatter: function(value, context) {
+                                    const epcLabel = getEpcLabel(value);
+                                    return `Huizen: ${value} (${epcLabel})`;
+                                }
+                            }
+                        }
+                    ]
+                },
+                options: {
+                    scales: {
+                        x: {
+
+                        },
+                        y: {
+                            beginAtZero: true,
+                            max: 600,
+                            ticks: {
+                                callback: function(value) {
+                                    return ['A', 'B', 'C', 'D', 'E', 'F'][Math.floor(value / 100)];
+                                }
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const label = context.dataset.label || '';
+                                    const value = context.raw;
+                                    const epcLabel = getEpcLabel(value);
+                                    return `${label}: ${value} (${epcLabel})`;
+                                }
+                            }
+                        },
+                        datalabels: {
+                            color: '#000',
+                            font: {
+                                weight: 'bold'
+                            }
+                        }
+                    }
+                },
+                plugins: [ChartDataLabels]
+            });
+        }
+    </script>
+</head>
+<body>
+    <div class="container">
+        <div class="control-group">
+            <label for="municipality-search">Zoek een gemeente:</label>
+            <input type="text" id="municipality-search" placeholder="Zoek gemeente...">
+            <label for="municipality-select">Selecteer een gemeente:</label>
+            <select id="municipality-select"></select>
+        </div>
+        <div class="chart-container">
+            <div class="chart-box">
+                <h2>Prijs Huis</h2>
+                <div id="housePriceChart"></div>
+            </div>
+            <div class="chart-box">
+                <h2>Prijs Flat</h2>
+                <div id="flatPriceChart"></div>
+            </div>
+            <div class="chart-box">
+                <h2>Huurprijs</h2>
+                <div id="rentPriceChart"></div>
+            </div>
+        </div>
+        <canvas id="epcChart"></canvas>
+    </div>
+<p style="font-size: smaller; color: lightgrey;">Bron: Statbel, Veka, CIB, Verwerking Embuild Vlaanderen</p>
+</body>
+</html>

@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Georama:wght@400;700&display=swap');
+      body {
+        font-family: 'Georama', sans-serif;
+      }
+    </style>
+    <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+    <script type="text/javascript">
+      google.charts.load('current', {'packages':['gauge']});
+      google.charts.setOnLoadCallback(drawChart);
+
+      function drawChart() {
+        fetch('https://gist.githubusercontent.com/gehuybre/40f1a41fc583a3acb083bfc52a56bdde/raw/7774052e6d1b54c0774937a53ec0c3f77a718f39/gistfile1.txt')
+          .then(response => response.json())
+          .then(data => {
+            const formattedData = data.reduce((acc, item) => {
+              acc[item["Administratieve Eenheid"]] = {
+                "2021 Huurlast alleenstaande": parseFloat(item["2021 Huurlast alleenstaande"]),
+                "2022 Huurlast alleenstaande": parseFloat(item["2022 Huurlast alleenstaande"]),
+                "2023 Huurlast alleenstaande": parseFloat(item["2023 Huurlast alleenstaande"]),
+              };
+              return acc;
+            }, {});
+
+            const units = Object.keys(formattedData);
+            const defaultUnit = units.includes('Vlaams Gewest') ? 'Vlaams Gewest' : units[0];
+
+            units.forEach(unit => {
+              const option = document.createElement('option');
+              option.value = unit;
+              option.textContent = unit;
+              if (unit === defaultUnit) {
+                option.selected = true;
+              }
+              document.getElementById('unitSelect').appendChild(option);
+            });
+
+            function updateChart(unit) {
+              const dataTable = new google.visualization.DataTable();
+              dataTable.addColumn('string', 'Label');
+              dataTable.addColumn('number', 'Value');
+              dataTable.addRows([
+                ['2021', formattedData[unit]["2021 Huurlast alleenstaande"]],
+                ['2022', formattedData[unit]["2022 Huurlast alleenstaande"]],
+                ['2023', formattedData[unit]["2023 Huurlast alleenstaande"]]
+              ]);
+
+              const options = {
+                width: 400, height: 120,
+                redFrom: 40, redTo: 60,
+                yellowFrom: 30, yellowTo: 40,
+                greenFrom: 20, greenTo: 30,
+                minorTicks: 5,
+                min: 20,
+                max: 60,
+                majorTicks: [],
+                animation: {
+                  duration: 400,
+                  easing: 'out',
+                },
+                valueFormat: '#,###%',
+                displayValueLabel: true,
+                fontName: 'Georama',
+              };
+
+              const chart = new google.visualization.Gauge(document.getElementById('chart_div'));
+              chart.draw(dataTable, options);
+            }
+
+            // Update the chart with the default unit
+            updateChart(defaultUnit);
+
+            document.getElementById('unitSelect').addEventListener('change', function() {
+              updateChart(this.value);
+            });
+
+            updateChart(defaultUnit);
+          })
+          .catch(error => {
+            console.error('Error fetching data:', error);
+          });
+      }
+    </script>
+  </head>
+  <body>
+    <label for="unitSelect">Kies een gemeente:</label>
+    <select id="unitSelect"></select>
+    <div id="chart_div"></div>
+  </body>
+</html>
